@@ -1,0 +1,18 @@
+{
+  "feature_names": [
+    "amount",
+    "latency",
+    "err_rate",
+    "attempt",
+    "amount_x_attempt",
+    "latency_x_errors",
+    "method_CARD",
+    "method_NET_BANKING",
+    "method_UPI",
+    "method_WALLET",
+    "gateway_UNKNOWN",
+    "status_UNKNOWN"
+  ],
+  "feature_count": 12,
+  "sample_count": 30000
+}

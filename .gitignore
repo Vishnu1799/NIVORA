@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv/
+venv/
+ENV/
+*.sqlite3
+
+# Flutter & Dart
+.dart_tool/
+.packages
+.pub/
+.pub-cache/
+flutter_app/build/app/
+flutter_app/build/ios/
+flutter_app/build/android/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+
+# Node / Mobile
+mobile/node_modules/
+mobile/.expo/
+mobile/.expo-shared/
+mobile/dist/
+mobile/web-build/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+services:
+  # 1. NIVORA Core Backend & AUREV AI Layer
+  - type: web
+    name: nivora-backend
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: BANK_SIMULATOR_URL
+        value: https://nivora-bank-simulator.onrender.com
+
+  # 2. Bank & Switch Chaos Simulator
+  - type: web
+    name: nivora-bank-simulator
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0

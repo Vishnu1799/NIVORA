@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./flutter_app
+      dockerfile: Dockerfile
+    container_name: nivora-frontend
+    ports:
+      - "5000:80"
+    depends_on:
+      - backend
+
+  bank-simulator:
+    build:
+      context: ./bank-simulator
+      dockerfile: Dockerfile
+    container_name: nivora-bank-simulator
+    ports:
+      - "8001:8001"
+    command: uvicorn main:app --host 0.0.0.0 --port 8001
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nivora-backend
+    environment:
+      DATABASE_URL: postgresql://nivora_user:nivora_pass@postgres:5432/nivora_db
+      BANK_SIMULATOR_URL: http://bank-simulator:8001
+      SECRET_KEY: dev-secret-key-change-in-production-minimum-32-chars
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - bank-simulator
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: nivora-postgres
+    environment:
+      POSTGRES_USER: nivora_user
+      POSTGRES_PASSWORD: nivora_pass
+      POSTGRES_DB: nivora_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

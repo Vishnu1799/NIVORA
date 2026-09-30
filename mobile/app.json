@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "NIVORA",
+    "slug": "nivora",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#167244"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.nivora.app" },
+    "android": { "adaptiveIcon": { "backgroundColor": "#167244" }, "package": "com.nivora.app" },
+    "scheme": "nivora",
+    "plugins": ["expo-router"]
+  }
+}
