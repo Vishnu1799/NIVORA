@@ -38,49 +38,43 @@ class _PaymentProcessingScreenState extends State<PaymentProcessingScreen> with 
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    _checkStatus();
     _startPolling();
+  }
+
+  Future<void> _checkStatus() async {
+    try {
+      final data = await ApiService.getPaymentStatus(widget.transactionId);
+      final status = data['status'] ?? 'PROCESSING';
+
+      if (!mounted) return;
+
+      setState(() {
+        _currentStatus = status;
+      });
+
+      if (status == 'SUCCESS' || status == 'SAFE_RETURN' || status == 'DECLINED' || status == 'FAILED') {
+        _timer?.cancel();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentResultScreen(
+              transactionId: widget.transactionId,
+              paymentData: data,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Initial status check error: $e');
+    }
   }
 
   void _startPolling() {
     // Poll every 1.0 second for rapid reaction to AUREV AI signals
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       _secondsWaiting++;
-      try {
-        final data = await ApiService.getPaymentStatus(widget.transactionId);
-        final status = data['status'] ?? 'PROCESSING';
-
-        if (!mounted) return;
-
-        setState(() {
-          _currentStatus = status;
-        });
-
-        if (status == 'SUCCESS') {
-          timer.cancel();
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PaymentResultScreen(
-                transactionId: widget.transactionId,
-                paymentData: data,
-              ),
-            ),
-          );
-        } else if (status == 'SAFE_RETURN' || status == 'DECLINED' || status == 'FAILED') {
-          timer.cancel();
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PaymentResultScreen(
-                transactionId: widget.transactionId,
-                paymentData: data,
-              ),
-            ),
-          );
-        }
-      } catch (e) {
-        debugPrint('Polling status error: $e');
-      }
+      await _checkStatus();
     });
   }
 

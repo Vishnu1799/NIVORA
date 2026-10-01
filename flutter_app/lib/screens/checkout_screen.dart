@@ -6,6 +6,7 @@ import '../providers/location_provider.dart';
 import '../widgets/location_picker_sheet.dart';
 import '../services/api_service.dart';
 import 'payment_processing_screen.dart';
+import 'payment_result_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final String initialMethod;
@@ -126,20 +127,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         paymentMethod: _selectedPaymentMethod,
       );
 
-      final transactionId = payment['transaction_id'];
+      final transactionId = payment['transaction_id'] ?? 'TXN_${DateTime.now().millisecondsSinceEpoch}';
+      final status = payment['status'] ?? 'PROCESSING';
       final amount = cart.total;
       cart.clearCart();
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaymentProcessingScreen(
-            transactionId: transactionId,
-            amount: amount,
+
+      if (status == 'DECLINED' || status == 'SAFE_RETURN') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentResultScreen(
+              transactionId: transactionId,
+              paymentData: payment,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentProcessingScreen(
+              transactionId: transactionId,
+              amount: amount,
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
