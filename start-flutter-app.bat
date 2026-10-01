@@ -1,7 +1,7 @@
 @echo off
-title NIVORA - Start Flutter App & Services
+title NIVORA - Localhost Flutter Hot-Reload Launcher
 echo ========================================================
-echo        Starting NIVORA Flutter App + AUREV AI
+echo        Starting NIVORA Localhost + Flutter Dev Server
 echo ========================================================
 echo.
 
@@ -13,17 +13,17 @@ timeout /t 2 /nobreak >nul
 echo [2/3] Starting Backend API on port 8000...
 start "NIVORA Backend API (Port 8000)" cmd /k "cd /d %~dp0backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
-timeout /t 3 /nobreak >nul
+timeout /t 2 /nobreak >nul
 
-echo [3/3] Starting Flutter App on Chrome...
+echo [3/3] Launching Flutter App in Chrome...
 start "NIVORA Flutter App" cmd /k "cd /d %~dp0flutter_app && flutter run -d chrome"
 
 echo.
 echo ========================================================
-echo   Services are running!
-echo   - Flutter app will open in Chrome automatically.
-echo   - To run on Windows Desktop: cd flutter_app && flutter run -d windows
-echo   - To run on connected Phone: cd flutter_app && flutter run
+echo   Services are starting!
+echo   - Bank Simulator Deck: http://localhost:8001
+echo   - Backend API Docs:    http://localhost:8000/docs
+echo   - Customer App:        Will open in Chrome automatically!
 echo ========================================================
 echo.
 pause

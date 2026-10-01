@@ -222,7 +222,35 @@ class ApiService {
 
   static const String cloudStateUrl = 'https://api.restful-api.dev/objects/ff808181a09d98f701a0f56ecdb05299';
 
-  // 5. PAYMENTS (With Direct Cloud Relay Synchronization)
+  // Helper to fetch current bank state from localhost or cloud relay
+  static Future<String> _fetchActiveBankState() async {
+    // 1. Check local bank simulator if running
+    try {
+      final localRes = await http.get(Uri.parse('http://localhost:8001/admin/service-state')).timeout(const Duration(milliseconds: 700));
+      if (localRes.statusCode == 200) {
+        final localData = jsonDecode(localRes.body);
+        final state = (localData['force_outcome'] ?? localData['state'] ?? 'UP').toString().toUpperCase();
+        if (state.isNotEmpty && state != 'UP') return state;
+      }
+    } catch (_) {}
+
+    // 2. Check cloud state relay
+    try {
+      final response = await http
+          .get(Uri.parse(cloudStateUrl))
+          .timeout(const Duration(seconds: 2));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['data'] != null && data['data']['state'] != null) {
+          return data['data']['state'].toString().toUpperCase();
+        }
+      }
+    } catch (_) {}
+
+    return 'UP';
+  }
+
+  // 5. PAYMENTS (With Localhost + Cloud Relay Synchronization)
   static Future<Map<String, dynamic>> createPayment({
     required String orderId,
     required double amount,
@@ -230,21 +258,7 @@ class ApiService {
   }) async {
     final txnId = 'TXN_${DateTime.now().millisecondsSinceEpoch.toRadixString(16).toUpperCase()}';
 
-    // 1. Fetch Real-time Cloud Bank State from Vercel Cloud Relay
-    String activeState = 'UP';
-    try {
-      final response = await http
-          .get(Uri.parse(cloudStateUrl))
-          .timeout(const Duration(seconds: 3));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['data'] != null && data['data']['state'] != null) {
-          activeState = data['data']['state'].toString().toUpperCase();
-        }
-      }
-    } catch (e) {
-      debugPrint('Cloud state check error: $e');
-    }
+    final activeState = await _fetchActiveBankState();
 
     // 2. Execute exact state
     if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
@@ -302,19 +316,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getPaymentStatus(String transactionId) async {
-    // 1. Fetch Real-time Cloud Bank State
-    String activeState = 'UP';
-    try {
-      final response = await http
-          .get(Uri.parse(cloudStateUrl))
-          .timeout(const Duration(seconds: 2));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['data'] != null && data['data']['state'] != null) {
-          activeState = data['data']['state'].toString().toUpperCase();
-        }
-      }
-    } catch (e) {}
+    final activeState = await _fetchActiveBankState();
 
     if (activeState == 'INSTANT_SUCCESS' || activeState == 'SUCCESS') {
       return {
@@ -385,20 +387,25 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getBankState() async {
-    try {
-      final response = await http.get(Uri.parse(cloudStateUrl)).timeout(const Duration(seconds: 3));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final state = (data['data'] != null && data['data']['state'] != null) ? data['data']['state'].toString() : 'UP';
-        return {'state': state, 'force_outcome': state};
-      }
-    } catch (e) {}
-
-    return {'state': 'UP', 'force_outcome': null};
+    final state = await _fetchActiveBankState();
+    return {'state': state, 'force_outcome': state};
   }
 
   static Future<void> setBankScenario(Map<String, dynamic> payload) async {
     final state = (payload['force_outcome'] ?? payload['state'] ?? 'UP').toString();
+    // 1. Set local bank simulator
+    try {
+      await http.post(
+        Uri.parse('http://localhost:8001/admin/service-state'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'state': state == 'DOWN' ? 'DOWN' : 'UP',
+          'force_outcome': state,
+        }),
+      ).timeout(const Duration(milliseconds: 700));
+    } catch (_) {}
+
+    // 2. Set cloud state relay
     try {
       await http.put(
         Uri.parse(cloudStateUrl),
@@ -408,6 +415,6 @@ class ApiService {
           'data': {'state': state, 'force_outcome': state}
         }),
       ).timeout(const Duration(seconds: 3));
-    } catch (e) {}
+    } catch (_) {}
   }
 }
