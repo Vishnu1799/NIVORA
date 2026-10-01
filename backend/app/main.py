@@ -66,8 +66,17 @@ def health():
     return {"status": "healthy"}
 
 
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+flutter_web_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../flutter_app/build/web"))
+if os.path.exists(flutter_web_dir):
+    app.mount("/app", StaticFiles(directory=flutter_web_dir, html=True), name="flutter_app")
+
 @app.get("/merchant", response_class=HTMLResponse)
 def merchant_direct(request: Request, db = Depends(__import__('app.database.connection', fromlist=['get_db']).get_db)):
     from app.api.merchant import merchant_portal
     return merchant_portal(request, db)
+
 
