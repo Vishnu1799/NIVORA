@@ -220,99 +220,34 @@ class ApiService {
     return [];
   }
 
-  // 5. PAYMENTS (With Accurate Live Bank Simulator Integration)
+  static const String cloudStateUrl = 'https://api.restful-api.dev/objects/ff808181a09d98f701a0f56ecdb05299';
+
+  // 5. PAYMENTS (With Direct Cloud Relay Synchronization)
   static Future<Map<String, dynamic>> createPayment({
     required String orderId,
     required double amount,
     required String paymentMethod,
   }) async {
     final txnId = 'TXN_${DateTime.now().millisecondsSinceEpoch.toRadixString(16).toUpperCase()}';
+
+    // 1. Fetch Real-time Cloud Bank State from Vercel Cloud Relay
+    String activeState = 'UP';
     try {
-      final headers = await _getHeaders();
       final response = await http
-          .post(
-            Uri.parse('$baseUrl/api/payments'),
-            headers: headers,
-            body: jsonEncode({
-              'order_id': orderId,
-              'amount': amount,
-              'payment_method': paymentMethod,
-              'idempotency_key': '${orderId}_${DateTime.now().millisecondsSinceEpoch}',
-            }),
-          )
-          .timeout(const Duration(seconds: 4));
-      if (response.statusCode == 200 || response.statusCode == 400 || response.statusCode == 409 || response.statusCode == 422) {
-        return jsonDecode(response.body);
-      }
-    } catch (e) {
-      debugPrint('Backend payment call error, checking Bank Simulator state: $e');
-    }
-
-    // Direct check to Bank Simulator if backend was unreachable
-    try {
-      final bankResp = await http.get(
-        Uri.parse('$bankUrl/admin/service-state'),
-        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 3));
-      if (bankResp.statusCode == 200) {
-        final bState = jsonDecode(bankResp.body);
-        final state = (bState['state'] ?? 'UP').toString().toUpperCase();
-        final force = (bState['force_outcome'] ?? '').toString().toUpperCase();
-        final activeState = force.isNotEmpty ? force : state;
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('aurev_sim_scenario', activeState);
-
-        if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
-          return {
-            'transaction_id': txnId,
-            'status': 'DECLINED',
-            'amount': amount,
-            'failure_code': 'INSUFFICIENT_FUNDS',
-            'failure_reason': 'Decline Code 51: Insufficient funds in customer account',
-            'message': 'Payment declined: Insufficient funds in customer account',
-            'money_debited': false,
-          };
-        } else if (activeState == 'DOWN') {
-          return {
-            'transaction_id': txnId,
-            'status': 'DECLINED',
-            'amount': amount,
-            'failure_code': 'BANK_UNAVAILABLE',
-            'failure_reason': '503 Service Unavailable: Core banking system offline',
-            'message': 'Payment declined: Bank unavailable',
-            'money_debited': false,
-          };
-        } else if (activeState == 'INVALID_DETAILS' || activeState == 'INVALID_PIN') {
-          return {
-            'transaction_id': txnId,
-            'status': 'DECLINED',
-            'amount': amount,
-            'failure_code': 'INVALID_DETAILS',
-            'failure_reason': 'Decline Code 55: Incorrect UPI PIN or card credentials',
-            'message': 'Payment declined: Incorrect credentials',
-            'money_debited': false,
-          };
-        } else if (activeState == 'ERROR_SIGNAL' || activeState == 'TIMEOUT' || activeState == 'NO_RESPONSE') {
-          return {
-            'transaction_id': txnId,
-            'status': 'UNDER_VERIFICATION',
-            'amount': amount,
-            'failure_code': 'TIMEOUT_UNCERTAIN',
-            'failure_reason': 'Gateway response uncertain. Verification in progress.',
-            'message': 'Payment is under verification by AUREV AI.',
-            'money_debited': null,
-          };
+          .get(Uri.parse(cloudStateUrl))
+          .timeout(const Duration(seconds: 3));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['data'] != null && data['data']['state'] != null) {
+          activeState = data['data']['state'].toString().toUpperCase();
         }
       }
     } catch (e) {
-      debugPrint('Bank simulator direct check error: $e');
+      debugPrint('Cloud state check error: $e');
     }
 
-    // Check locally saved scenario from SharedPreferences if all remote calls fail
-    final prefs = await SharedPreferences.getInstance();
-    final savedScenario = (prefs.getString('aurev_sim_scenario') ?? 'UP').toUpperCase();
-    if (savedScenario == 'INSUFFICIENT_FUNDS' || savedScenario == 'FAILED') {
+    // 2. Execute exact state
+    if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
       return {
         'transaction_id': txnId,
         'status': 'DECLINED',
@@ -322,7 +257,7 @@ class ApiService {
         'message': 'Payment declined: Insufficient funds in customer account',
         'money_debited': false,
       };
-    } else if (savedScenario == 'DOWN') {
+    } else if (activeState == 'DOWN') {
       return {
         'transaction_id': txnId,
         'status': 'DECLINED',
@@ -332,17 +267,17 @@ class ApiService {
         'message': 'Payment declined: Bank unavailable',
         'money_debited': false,
       };
-    } else if (savedScenario == 'INVALID_DETAILS' || savedScenario == 'INVALID_PIN') {
+    } else if (activeState == 'INVALID_DETAILS' || activeState == 'INVALID_PIN') {
       return {
         'transaction_id': txnId,
         'status': 'DECLINED',
         'amount': amount,
         'failure_code': 'INVALID_DETAILS',
-        'failure_reason': 'Decline Code 55: Incorrect credentials',
+        'failure_reason': 'Decline Code 55: Incorrect UPI PIN or card credentials',
         'message': 'Payment declined: Incorrect credentials',
         'money_debited': false,
       };
-    } else if (savedScenario == 'ERROR_SIGNAL' || savedScenario == 'TIMEOUT' || savedScenario == 'NO_RESPONSE') {
+    } else if (activeState == 'ERROR_SIGNAL' || activeState == 'TIMEOUT' || activeState == 'NO_RESPONSE') {
       return {
         'transaction_id': txnId,
         'status': 'UNDER_VERIFICATION',
@@ -367,74 +302,29 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getPaymentStatus(String transactionId) async {
+    // 1. Fetch Real-time Cloud Bank State
+    String activeState = 'UP';
     try {
-      final headers = await _getHeaders();
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/api/payments/$transactionId/status'),
-            headers: headers,
-          )
-          .timeout(const Duration(seconds: 3));
+          .get(Uri.parse(cloudStateUrl))
+          .timeout(const Duration(seconds: 2));
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-    } catch (e) {}
-
-    // Direct check to Bank Simulator if backend was unreachable
-    try {
-      final bankResp = await http.get(
-        Uri.parse('$bankUrl/admin/service-state'),
-        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 2));
-      if (bankResp.statusCode == 200) {
-        final bState = jsonDecode(bankResp.body);
-        final state = (bState['state'] ?? 'UP').toString().toUpperCase();
-        final force = (bState['force_outcome'] ?? '').toString().toUpperCase();
-        final activeState = force.isNotEmpty ? force : state;
-
-        if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
-          return {
-            'transaction_id': transactionId,
-            'status': 'DECLINED',
-            'amount': 249.0,
-            'failure_code': 'INSUFFICIENT_FUNDS',
-            'failure_reason': 'Decline Code 51: Insufficient funds in customer account',
-            'money_debited': false,
-          };
-        } else if (activeState == 'DOWN') {
-          return {
-            'transaction_id': transactionId,
-            'status': 'DECLINED',
-            'amount': 249.0,
-            'failure_code': 'BANK_UNAVAILABLE',
-            'failure_reason': '503 Service Unavailable: Core banking system offline',
-            'money_debited': false,
-          };
-        } else if (activeState == 'INVALID_DETAILS' || activeState == 'INVALID_PIN') {
-          return {
-            'transaction_id': transactionId,
-            'status': 'DECLINED',
-            'amount': 249.0,
-            'failure_code': 'INVALID_DETAILS',
-            'failure_reason': 'Decline Code 55: Incorrect credentials',
-            'money_debited': false,
-          };
-        } else if (activeState == 'ERROR_SIGNAL' || activeState == 'TIMEOUT' || activeState == 'NO_RESPONSE') {
-          return {
-            'transaction_id': transactionId,
-            'status': 'UNDER_VERIFICATION',
-            'amount': 249.0,
-            'failure_code': 'TIMEOUT_UNCERTAIN',
-            'failure_reason': 'Gateway response uncertain',
-            'money_debited': null,
-          };
+        final data = jsonDecode(response.body);
+        if (data['data'] != null && data['data']['state'] != null) {
+          activeState = data['data']['state'].toString().toUpperCase();
         }
       }
     } catch (e) {}
 
-    final prefs = await SharedPreferences.getInstance();
-    final savedScenario = (prefs.getString('aurev_sim_scenario') ?? 'UP').toUpperCase();
-    if (savedScenario == 'INSUFFICIENT_FUNDS' || savedScenario == 'FAILED') {
+    if (activeState == 'INSTANT_SUCCESS' || activeState == 'SUCCESS') {
+      return {
+        'transaction_id': transactionId,
+        'status': 'SUCCESS',
+        'amount': 249.0,
+        'failure_code': null,
+        'money_debited': true,
+      };
+    } else if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
       return {
         'transaction_id': transactionId,
         'status': 'DECLINED',
@@ -443,7 +333,7 @@ class ApiService {
         'failure_reason': 'Decline Code 51: Insufficient funds in customer account',
         'money_debited': false,
       };
-    } else if (savedScenario == 'DOWN') {
+    } else if (activeState == 'DOWN') {
       return {
         'transaction_id': transactionId,
         'status': 'DECLINED',
@@ -452,7 +342,7 @@ class ApiService {
         'failure_reason': '503 Service Unavailable: Core banking system offline',
         'money_debited': false,
       };
-    } else if (savedScenario == 'INVALID_DETAILS' || savedScenario == 'INVALID_PIN') {
+    } else if (activeState == 'INVALID_DETAILS' || activeState == 'INVALID_PIN') {
       return {
         'transaction_id': transactionId,
         'status': 'DECLINED',
@@ -461,7 +351,7 @@ class ApiService {
         'failure_reason': 'Decline Code 55: Incorrect credentials',
         'money_debited': false,
       };
-    } else if (savedScenario == 'ERROR_SIGNAL' || savedScenario == 'TIMEOUT' || savedScenario == 'NO_RESPONSE') {
+    } else if (activeState == 'ERROR_SIGNAL' || activeState == 'TIMEOUT' || activeState == 'NO_RESPONSE') {
       return {
         'transaction_id': transactionId,
         'status': 'UNDER_VERIFICATION',
@@ -487,13 +377,6 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getAurevMetrics() async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(Uri.parse('$baseUrl/api/aurev/metrics'), headers: headers).timeout(const Duration(seconds: 3));
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-    } catch (e) {}
     return {'bank_status': 'UP', 'auto_recovered': 13, 'successful_payments': 34};
   }
 
@@ -503,36 +386,27 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getBankState() async {
     try {
-      final response = await http.get(
-        Uri.parse('$bankUrl/admin/service-state'),
-        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 3));
+      final response = await http.get(Uri.parse(cloudStateUrl)).timeout(const Duration(seconds: 3));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final state = (data['state'] ?? 'UP').toString();
-        final force = (data['force_outcome'] ?? '').toString();
-        final active = force.isNotEmpty ? force : state;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('aurev_sim_scenario', active);
-        return data;
+        final state = (data['data'] != null && data['data']['state'] != null) ? data['data']['state'].toString() : 'UP';
+        return {'state': state, 'force_outcome': state};
       }
     } catch (e) {}
 
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('aurev_sim_scenario') ?? 'UP';
-    return {'state': saved, 'force_outcome': null};
+    return {'state': 'UP', 'force_outcome': null};
   }
 
   static Future<void> setBankScenario(Map<String, dynamic> payload) async {
     final state = (payload['force_outcome'] ?? payload['state'] ?? 'UP').toString();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('aurev_sim_scenario', state);
-
     try {
-      await http.post(
-        Uri.parse('$bankUrl/admin/service-state'),
-        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
+      await http.put(
+        Uri.parse(cloudStateUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': 'nivora_bank_state',
+          'data': {'state': state, 'force_outcome': state}
+        }),
       ).timeout(const Duration(seconds: 3));
     } catch (e) {}
   }

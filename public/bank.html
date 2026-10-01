@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AUREV AI — Bank Signal Simulator Deck</title>
+    <title>AUREV AI — Bank Simulator Control Deck (Vercel Cloud)</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -91,7 +91,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">⚡ AUREV AI — Bank Simulator Control Deck</div>
+            <div class="logo">⚡ AUREV AI — Bank Switch Simulator Deck</div>
             <div id="liveBadge" class="status-badge badge-up">SIGNAL: NORMAL</div>
         </div>
 
@@ -102,7 +102,7 @@
                 <button class="btn-reset" onclick="resetSimulator()">🔄 Reset to Normal</button>
             </div>
             <p style="font-size: 12px; color: #94A3B8; margin-top: 2px;">
-                Controls banking network signals for the live shopping app:
+                Control scenarios here in real-time. The user app at <b>https://nivora-green.vercel.app</b> updates immediately.
             </p>
 
             <div class="signal-grid">
@@ -118,14 +118,14 @@
 
                 <button class="signal-btn btn-success" id="sig-success" onclick="sendSignal('INSTANT_SUCCESS')">
                     <span class="signal-title" style="color: #34D399;">🟢 TRIGGER INSTANT SUCCESS</span>
-                    <span class="signal-desc">Delivers late success signal to confirm active order.</span>
+                    <span class="signal-desc">Delivers late success signal to active order.</span>
                 </button>
             </div>
 
             <div class="guide-box">
-                <b>💡 How to Demo Both Paths on Vercel:</b><br/>
+                <b>💡 How to Demo Both Paths to Judges:</b><br/>
                 • <b>Path A (Recovered):</b> Click <i>[TRIGGER ERROR SIGNAL]</i> ➔ Customer taps Pay Now on phone (enters <b>Under Verification</b>, Retry blocked) ➔ Click <i>[TRIGGER INSTANT SUCCESS]</i> ➔ AUREV verifies & confirms order!<br/>
-                • <b>Path B (Safe Return):</b> Click <i>[TRIGGER ERROR SIGNAL]</i> ➔ Customer taps Pay Now ➔ Wait 7s without sending success ➔ AUREV audits ledger & safely closes with ₹0 debited!
+                • <b>Path B (Safe Return):</b> Click <i>[TRIGGER ERROR SIGNAL]</i> ➔ Customer taps Pay Now ➔ Wait 7s without sending success ➔ AUREV safely closes with ₹0 debited!
             </div>
         </div>
 
@@ -133,22 +133,22 @@
         <div class="card">
             <div class="section-title" style="color: #94A3B8;">🛑 Bank Decline Conditions</div>
             <div class="grid">
-                <button class="scenario-btn" id="btn-insufficient" onclick="setScenario('INSUFFICIENT_FUNDS', 0.0, 'INSUFFICIENT_FUNDS', 0)">
+                <button class="scenario-btn" id="btn-insufficient" onclick="setScenario('INSUFFICIENT_FUNDS')">
                     <span class="title">💳 Low Balance (Decline 51)</span>
                     <span class="sub">Customer account has low balance. ₹0 debited.</span>
                 </button>
 
-                <button class="scenario-btn" id="btn-down" onclick="setScenario('DOWN', 0.0, null, 0)">
+                <button class="scenario-btn" id="btn-down" onclick="setScenario('DOWN')">
                     <span class="title">❌ Bank Server Down (503)</span>
                     <span class="sub">Immediate decline before money touches customer account.</span>
                 </button>
 
-                <button class="scenario-btn" id="btn-invalid" onclick="setScenario('INVALID_DETAILS', 0.0, 'INVALID_DETAILS', 0)">
+                <button class="scenario-btn" id="btn-invalid" onclick="setScenario('INVALID_DETAILS')">
                     <span class="title">🔑 Wrong PIN / Card Details (Decline 55)</span>
                     <span class="sub">Incorrect credentials entered. ₹0 debited.</span>
                 </button>
 
-                <button class="scenario-btn" id="btn-up" onclick="setScenario('UP', 0.0, null, 0)">
+                <button class="scenario-btn" id="btn-up" onclick="setScenario('UP')">
                     <span class="title">🟢 Normal Operation (Instant Success)</span>
                     <span class="sub">100% smooth checkout without errors.</span>
                 </button>
@@ -157,8 +157,8 @@
 
         <div class="card">
             <div class="status-panel">
-                <span id="stateTelemetry">Status: Online | Active Signal: None</span>
-                <span id="txnCount">Connected to Vercel Cloud & Local Simulator</span>
+                <span id="stateTelemetry">Status: Connected to Cloud Relay | Active Signal: Normal</span>
+                <span id="txnCount">100% Vercel Cloud Synchronized</span>
             </div>
         </div>
     </div>
@@ -166,114 +166,78 @@
     <div id="toast" class="toast">Signal Dispatched!</div>
 
     <script>
-        // Sync state across both local simulator and Vercel cloud
-        const endpoints = [
-            '/api/admin',
-            'http://localhost:8001/admin',
-            'http://10.253.25.92:8001/admin'
-        ];
-
+        const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff808181a09d98f701a0f56ecdb05299';
         let activeState = 'UP';
-        let forceOutcome = null;
 
-        // Load saved state from localStorage
-        try {
-            const saved = localStorage.getItem('aurev_sim_scenario');
-            if (saved) activeState = saved;
-        } catch(e) {}
-
-        function updateUI(state, force) {
-            const display = force || state || 'UP';
+        function updateUI(state) {
+            activeState = state || 'UP';
             const badge = document.getElementById('liveBadge');
-            badge.innerText = `SIGNAL: ${display.replace('_', ' ')}`;
-            badge.className = `status-badge badge-${display.toLowerCase()}`;
+            badge.innerText = `SIGNAL: ${activeState.replace('_', ' ')}`;
+            badge.className = `status-badge badge-${activeState.toLowerCase()}`;
             
-            document.getElementById('stateTelemetry').innerText = `Status: Armed | Active Signal: ${display}`;
+            document.getElementById('stateTelemetry').innerText = `Status: Armed in Cloud | Active Signal: ${activeState}`;
 
             document.querySelectorAll('.signal-btn, .scenario-btn').forEach(btn => btn.classList.remove('active'));
 
-            if (display === 'ERROR_SIGNAL') {
+            if (activeState === 'ERROR_SIGNAL') {
                 document.getElementById('sig-error')?.classList.add('active');
-            } else if (display === 'TIMEOUT' || display === 'NO_RESPONSE') {
+            } else if (activeState === 'TIMEOUT' || activeState === 'NO_RESPONSE') {
                 document.getElementById('sig-timeout')?.classList.add('active');
-            } else if (display === 'DOWN') {
+            } else if (activeState === 'DOWN') {
                 document.getElementById('btn-down')?.classList.add('active');
-            } else if (display === 'INSUFFICIENT_FUNDS') {
+            } else if (activeState === 'INSUFFICIENT_FUNDS') {
                 document.getElementById('btn-insufficient')?.classList.add('active');
-            } else if (display === 'INVALID_DETAILS') {
+            } else if (activeState === 'INVALID_DETAILS') {
                 document.getElementById('btn-invalid')?.classList.add('active');
-            } else if (display === 'UP' || display === 'NORMAL') {
+            } else if (activeState === 'UP' || activeState === 'NORMAL') {
                 document.getElementById('btn-up')?.classList.add('active');
             }
         }
 
         async function fetchState() {
-            for (const ep of endpoints) {
-                try {
-                    const res = await fetch(`${ep}/service-state`, { signal: AbortSignal.timeout(1500) });
-                    if (res.ok) {
-                        const data = await res.json();
-                        activeState = data.state || 'UP';
-                        forceOutcome = data.force_outcome;
-                        updateUI(activeState, forceOutcome);
-                        return;
-                    }
-                } catch(e) {}
+            try {
+                const res = await fetch(CLOUD_STATE_URL, { cache: 'no-store' });
+                if (res.ok) {
+                    const data = await res.json();
+                    const state = (data.data && data.data.state) ? data.data.state : 'UP';
+                    updateUI(state);
+                }
+            } catch(e) {}
+        }
+
+        async function pushCloudState(state) {
+            updateUI(state);
+            try {
+                await fetch(CLOUD_STATE_URL, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: 'nivora_bank_state',
+                        data: {
+                            state: state,
+                            force_outcome: state,
+                            updated_at: new Date().toISOString()
+                        }
+                    })
+                });
+            } catch(e) {
+                console.error('Cloud state push error:', e);
             }
-            updateUI(activeState, forceOutcome);
         }
 
         async function sendSignal(signal) {
-            activeState = signal;
-            forceOutcome = signal;
-            try { localStorage.setItem('aurev_sim_scenario', signal); } catch(e) {}
-            updateUI(activeState, forceOutcome);
             showToast(`Triggered: ${signal}`);
-
-            for (const ep of endpoints) {
-                try {
-                    await fetch(`${ep}/signal`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ signal: signal }),
-                        signal: AbortSignal.timeout(2000)
-                    });
-                } catch(e) {}
-            }
+            await pushCloudState(signal);
         }
 
-        async function setScenario(state, failure_rate, force_outcome, response_delay_ms) {
-            activeState = state;
-            forceOutcome = force_outcome;
-            const chosen = force_outcome || state;
-            try { localStorage.setItem('aurev_sim_scenario', chosen); } catch(e) {}
-            updateUI(activeState, forceOutcome);
-            showToast(`Selected: ${chosen}`);
-
-            for (const ep of endpoints) {
-                try {
-                    await fetch(`${ep}/service-state`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ state, failure_rate, force_outcome, response_delay_ms }),
-                        signal: AbortSignal.timeout(2000)
-                    });
-                } catch(e) {}
-            }
+        async function setScenario(state) {
+            showToast(`Selected: ${state}`);
+            await pushCloudState(state);
         }
 
         async function resetSimulator() {
-            activeState = 'UP';
-            forceOutcome = null;
-            try { localStorage.setItem('aurev_sim_scenario', 'UP'); } catch(e) {}
-            updateUI('UP', null);
             showToast("Reset to Normal");
-
-            for (const ep of endpoints) {
-                try {
-                    await fetch(`${ep}/reset`, { method: 'POST', signal: AbortSignal.timeout(2000) });
-                } catch(e) {}
-            }
+            await pushCloudState('UP');
         }
 
         function showToast(msg) {
@@ -283,9 +247,9 @@
             setTimeout(() => t.style.display = 'none', 2500);
         }
 
-        updateUI(activeState, forceOutcome);
-        setInterval(fetchState, 2000);
+        updateUI('UP');
         fetchState();
+        setInterval(fetchState, 2000);
     </script>
 </body>
 </html>

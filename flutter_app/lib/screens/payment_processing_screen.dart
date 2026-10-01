@@ -64,9 +64,31 @@ class _PaymentProcessingScreenState extends State<PaymentProcessingScreen> with 
             ),
           ),
         );
+        return;
+      }
+
+      // Path B: 7-second verification window expires without success signal -> SAFE_RETURN
+      if (_currentStatus == 'UNDER_VERIFICATION' && _secondsWaiting >= 7) {
+        _timer?.cancel();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentResultScreen(
+              transactionId: widget.transactionId,
+              paymentData: {
+                'status': 'SAFE_RETURN',
+                'amount': widget.amount,
+                'failure_code': 'TIMEOUT_RESOLVED',
+                'failure_reason': 'Payment could not be confirmed. ₹0 was debited. Safe to return or retry.',
+                'money_debited': false,
+              },
+            ),
+          ),
+        );
+        return;
       }
     } catch (e) {
-      debugPrint('Initial status check error: $e');
+      debugPrint('Status check error: $e');
     }
   }
 
