@@ -19,11 +19,170 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   late String _selectedPaymentMethod;
   bool _isLoading = false;
+  String _activeBankSignal = 'UP';
+  bool _isLoadingBankSignal = false;
 
   @override
   void initState() {
     super.initState();
     _selectedPaymentMethod = widget.initialMethod;
+    _fetchActiveBankSignal();
+  }
+
+  Future<void> _fetchActiveBankSignal() async {
+    setState(() => _isLoadingBankSignal = true);
+    try {
+      final stateData = await ApiService.getBankState();
+      final state = stateData['state'] ?? 'UP';
+      final force = stateData['force_outcome'];
+      final active = (force != null && force.toString().isNotEmpty) ? force.toString() : state.toString();
+      if (mounted) {
+        setState(() {
+          _activeBankSignal = active.toUpperCase();
+          _isLoadingBankSignal = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingBankSignal = false);
+    }
+  }
+
+  String _getSignalDisplayName(String sig) {
+    switch (sig) {
+      case 'INSUFFICIENT_FUNDS':
+      case 'FAILED':
+        return '💳 Low Balance (Decline 51)';
+      case 'DOWN':
+        return '❌ Bank Server Down (503)';
+      case 'ERROR_SIGNAL':
+        return '⚡ Error Signal (Under Verification)';
+      case 'TIMEOUT':
+      case 'NO_RESPONSE':
+        return '⏱️ Timeout (Under Verification)';
+      case 'INVALID_DETAILS':
+      case 'INVALID_PIN':
+        return '🔑 Wrong PIN / Details (55)';
+      default:
+        return '🟢 Normal Operation (Success)';
+    }
+  }
+
+  Color _getSignalColor(String sig) {
+    switch (sig) {
+      case 'INSUFFICIENT_FUNDS':
+      case 'FAILED':
+      case 'DOWN':
+      case 'INVALID_DETAILS':
+        return const Color(0xFFF87171);
+      case 'ERROR_SIGNAL':
+      case 'TIMEOUT':
+      case 'NO_RESPONSE':
+        return const Color(0xFFFBBF24);
+      default:
+        return const Color(0xFF34D399);
+    }
+  }
+
+  void _showScenarioPickerSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '⚡ AUREV Bank Simulator Signal',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Select a bank condition to simulate for this payment test:',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            _buildScenarioOption('UP', '🟢 Normal Operation', '100% successful checkout without issues', null),
+            _buildScenarioOption('INSUFFICIENT_FUNDS', '💳 Low Balance (Decline 51)', 'Customer account has insufficient funds (₹0 debited)', 'INSUFFICIENT_FUNDS'),
+            _buildScenarioOption('DOWN', '❌ Bank Server Down (503)', 'Core banking system offline — safe decline', null),
+            _buildScenarioOption('ERROR_SIGNAL', '⚡ Trigger Error Signal', 'Drops connection mid-capture ➔ UNDER_VERIFICATION', 'ERROR_SIGNAL'),
+            _buildScenarioOption('TIMEOUT', '⏱️ Trigger Timeout (504)', 'Dropped gateway reply ➔ UNDER_VERIFICATION', 'TIMEOUT'),
+            _buildScenarioOption('INVALID_DETAILS', '🔑 Wrong PIN / Details (55)', 'Incorrect credentials entered (₹0 debited)', 'INVALID_DETAILS'),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScenarioOption(String stateKey, String title, String subtitle, String? forceOutcome) {
+    final targetState = (forceOutcome ?? stateKey).toUpperCase();
+    final isSelected = _activeBankSignal == targetState;
+    return InkWell(
+      onTap: () async {
+        Navigator.pop(context);
+        setState(() {
+          _activeBankSignal = targetState;
+        });
+        await ApiService.setBankScenario({
+          'state': stateKey,
+          'force_outcome': forceOutcome,
+          'failure_rate': 0.0,
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF0369A1),
+              content: Text('Bank Simulator Armed: $title'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF131E32),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF38BDF8) : Colors.white.withOpacity(0.08),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(Icons.check_circle_rounded, color: Color(0xFF38BDF8), size: 20),
+          ],
+        ),
+      ),
+    );
   }
 
   // Credential Text Controllers
@@ -406,6 +565,74 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   TextButton(
                     onPressed: () => LocationPickerSheet.show(context),
                     child: const Text('Change', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // Live Bank Signal / Simulation Card
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.35)),
+                boxShadow: [
+                  BoxShadow(color: const Color(0xFF38BDF8).withOpacity(0.12), blurRadius: 10, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.hub_rounded, color: Color(0xFF38BDF8), size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'AUREV Bank Switch Simulator',
+                              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                            if (_isLoadingBankSignal) ...[
+                              const SizedBox(width: 6),
+                              const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF38BDF8))),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _getSignalDisplayName(_activeBankSignal),
+                          style: TextStyle(
+                            color: _getSignalColor(_activeBankSignal),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _showScenarioPickerSheet,
+                    icon: const Icon(Icons.tune_rounded, size: 13, color: Colors.white),
+                    label: const Text('Simulate', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0369A1),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ],
               ),

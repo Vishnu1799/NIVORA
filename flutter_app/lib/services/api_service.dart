@@ -244,6 +244,9 @@ class ApiService {
         final force = (bState['force_outcome'] ?? '').toString().toUpperCase();
         final activeState = force.isNotEmpty ? force : state;
 
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('aurev_sim_scenario', activeState);
+
         if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
           return {
             'transaction_id': txnId,
@@ -288,6 +291,51 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('Bank simulator direct check error: $e');
+    }
+
+    // Check locally saved scenario from SharedPreferences if all remote calls fail
+    final prefs = await SharedPreferences.getInstance();
+    final savedScenario = (prefs.getString('aurev_sim_scenario') ?? 'UP').toUpperCase();
+    if (savedScenario == 'INSUFFICIENT_FUNDS' || savedScenario == 'FAILED') {
+      return {
+        'transaction_id': txnId,
+        'status': 'DECLINED',
+        'amount': amount,
+        'failure_code': 'INSUFFICIENT_FUNDS',
+        'failure_reason': 'Decline Code 51: Insufficient funds in customer account',
+        'message': 'Payment declined: Insufficient funds in customer account',
+        'money_debited': false,
+      };
+    } else if (savedScenario == 'DOWN') {
+      return {
+        'transaction_id': txnId,
+        'status': 'DECLINED',
+        'amount': amount,
+        'failure_code': 'BANK_UNAVAILABLE',
+        'failure_reason': '503 Service Unavailable: Core banking system offline',
+        'message': 'Payment declined: Bank unavailable',
+        'money_debited': false,
+      };
+    } else if (savedScenario == 'INVALID_DETAILS' || savedScenario == 'INVALID_PIN') {
+      return {
+        'transaction_id': txnId,
+        'status': 'DECLINED',
+        'amount': amount,
+        'failure_code': 'INVALID_DETAILS',
+        'failure_reason': 'Decline Code 55: Incorrect credentials',
+        'message': 'Payment declined: Incorrect credentials',
+        'money_debited': false,
+      };
+    } else if (savedScenario == 'ERROR_SIGNAL' || savedScenario == 'TIMEOUT' || savedScenario == 'NO_RESPONSE') {
+      return {
+        'transaction_id': txnId,
+        'status': 'UNDER_VERIFICATION',
+        'amount': amount,
+        'failure_code': 'TIMEOUT_UNCERTAIN',
+        'failure_reason': 'Gateway response uncertain. Verification in progress.',
+        'message': 'Payment is under verification by AUREV AI.',
+        'money_debited': null,
+      };
     }
 
     return {
@@ -365,6 +413,46 @@ class ApiService {
       }
     } catch (e) {}
 
+    final prefs = await SharedPreferences.getInstance();
+    final savedScenario = (prefs.getString('aurev_sim_scenario') ?? 'UP').toUpperCase();
+    if (savedScenario == 'INSUFFICIENT_FUNDS' || savedScenario == 'FAILED') {
+      return {
+        'transaction_id': transactionId,
+        'status': 'DECLINED',
+        'amount': 249.0,
+        'failure_code': 'INSUFFICIENT_FUNDS',
+        'failure_reason': 'Decline Code 51: Insufficient funds in customer account',
+        'money_debited': false,
+      };
+    } else if (savedScenario == 'DOWN') {
+      return {
+        'transaction_id': transactionId,
+        'status': 'DECLINED',
+        'amount': 249.0,
+        'failure_code': 'BANK_UNAVAILABLE',
+        'failure_reason': '503 Service Unavailable: Core banking system offline',
+        'money_debited': false,
+      };
+    } else if (savedScenario == 'INVALID_DETAILS' || savedScenario == 'INVALID_PIN') {
+      return {
+        'transaction_id': transactionId,
+        'status': 'DECLINED',
+        'amount': 249.0,
+        'failure_code': 'INVALID_DETAILS',
+        'failure_reason': 'Decline Code 55: Incorrect credentials',
+        'money_debited': false,
+      };
+    } else if (savedScenario == 'ERROR_SIGNAL' || savedScenario == 'TIMEOUT' || savedScenario == 'NO_RESPONSE') {
+      return {
+        'transaction_id': transactionId,
+        'status': 'UNDER_VERIFICATION',
+        'amount': 249.0,
+        'failure_code': 'TIMEOUT_UNCERTAIN',
+        'failure_reason': 'Gateway response uncertain',
+        'money_debited': null,
+      };
+    }
+
     return {
       'transaction_id': transactionId,
       'status': 'SUCCESS',
@@ -393,7 +481,30 @@ class ApiService {
     return [];
   }
 
+  static Future<Map<String, dynamic>> getBankState() async {
+    try {
+      final response = await http.get(Uri.parse('$bankUrl/admin/service-state')).timeout(const Duration(seconds: 2));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final state = (data['state'] ?? 'UP').toString();
+        final force = (data['force_outcome'] ?? '').toString();
+        final active = force.isNotEmpty ? force : state;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('aurev_sim_scenario', active);
+        return data;
+      }
+    } catch (e) {}
+
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('aurev_sim_scenario') ?? 'UP';
+    return {'state': saved, 'force_outcome': null};
+  }
+
   static Future<void> setBankScenario(Map<String, dynamic> payload) async {
+    final state = (payload['force_outcome'] ?? payload['state'] ?? 'UP').toString();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('aurev_sim_scenario', state);
+
     try {
       await http.post(
         Uri.parse('$bankUrl/admin/service-state'),
