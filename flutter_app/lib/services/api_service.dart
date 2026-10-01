@@ -224,30 +224,39 @@ class ApiService {
 
   // Helper to fetch current bank state from localhost or cloud channel
   static Future<String> _fetchActiveBankState() async {
-    // 1. Check local bank simulator if running
-    try {
-      final localRes = await http.get(Uri.parse('http://localhost:8001/admin/service-state')).timeout(const Duration(milliseconds: 700));
-      if (localRes.statusCode == 200) {
-        final localData = jsonDecode(localRes.body);
-        final state = (localData['force_outcome'] ?? localData['state'] ?? 'UP').toString().toUpperCase();
-        if (state.isNotEmpty && state != 'UP') return state;
-      }
-    } catch (_) {}
+    // 1. If running locally on localhost, check local bank simulator
+    if (kIsWeb && (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')) {
+      try {
+        final localRes = await http.get(Uri.parse('http://localhost:8001/admin/service-state')).timeout(const Duration(milliseconds: 700));
+        if (localRes.statusCode == 200) {
+          final localData = jsonDecode(localRes.body);
+          final state = (localData['force_outcome'] ?? localData['state'] ?? 'UP').toString().toUpperCase().trim();
+          if (state.isNotEmpty && state != 'UP') return state;
+        }
+      } catch (_) {}
+    }
 
     // 2. Check cloud state channel
     try {
       final response = await http
           .get(Uri.parse('$cloudChannelUrl/json?poll=1&since=12h'))
-          .timeout(const Duration(seconds: 2));
+          .timeout(const Duration(seconds: 3));
       if (response.statusCode == 200) {
         final lines = response.body.trim().split('\n');
         for (int i = lines.length - 1; i >= 0; i--) {
+          final line = lines[i].trim();
+          if (line.isEmpty) continue;
           try {
-            final item = jsonDecode(lines[i]);
+            final item = jsonDecode(line);
             if (item['event'] == 'message' && item['message'] != null) {
-              final msgObj = jsonDecode(item['message']);
-              if (msgObj['state'] != null) {
-                return msgObj['state'].toString().toUpperCase();
+              final raw = item['message'].toString().trim();
+              if (raw.startsWith('{')) {
+                final msgObj = jsonDecode(raw);
+                final st = (msgObj['state'] ?? msgObj['force_outcome'] ?? '').toString().toUpperCase().trim();
+                if (st.isNotEmpty) return st;
+              } else {
+                final st = raw.toUpperCase().trim();
+                if (st.isNotEmpty) return st;
               }
             }
           } catch (_) {}
@@ -266,10 +275,10 @@ class ApiService {
   }) async {
     final txnId = 'TXN_${DateTime.now().millisecondsSinceEpoch.toRadixString(16).toUpperCase()}';
 
-    final activeState = await _fetchActiveBankState();
+    final activeState = (await _fetchActiveBankState()).toUpperCase().trim();
 
     // 2. Execute exact state
-    if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
+    if (activeState.contains('INSUFFICIENT') || activeState.contains('LOW_BALANCE') || activeState.contains('BALANCE') || activeState == 'FAILED') {
       return {
         'transaction_id': txnId,
         'status': 'DECLINED',
@@ -289,7 +298,7 @@ class ApiService {
         'message': 'Payment declined: Bank unavailable',
         'money_debited': false,
       };
-    } else if (activeState == 'INVALID_DETAILS' || activeState == 'INVALID_PIN') {
+    } else if (activeState.contains('INVALID') || activeState.contains('PIN')) {
       return {
         'transaction_id': txnId,
         'status': 'DECLINED',
@@ -299,7 +308,7 @@ class ApiService {
         'message': 'Payment declined: Incorrect credentials',
         'money_debited': false,
       };
-    } else if (activeState == 'ERROR_SIGNAL' || activeState == 'TIMEOUT' || activeState == 'NO_RESPONSE') {
+    } else if (activeState.contains('ERROR') || activeState.contains('TIMEOUT') || activeState.contains('NO_RESPONSE')) {
       return {
         'transaction_id': txnId,
         'status': 'UNDER_VERIFICATION',
@@ -324,7 +333,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getPaymentStatus(String transactionId) async {
-    final activeState = await _fetchActiveBankState();
+    final activeState = (await _fetchActiveBankState()).toUpperCase().trim();
 
     if (activeState == 'INSTANT_SUCCESS' || activeState == 'SUCCESS') {
       return {
@@ -334,7 +343,7 @@ class ApiService {
         'failure_code': null,
         'money_debited': true,
       };
-    } else if (activeState == 'INSUFFICIENT_FUNDS' || activeState == 'FAILED') {
+    } else if (activeState.contains('INSUFFICIENT') || activeState.contains('LOW_BALANCE') || activeState.contains('BALANCE') || activeState == 'FAILED') {
       return {
         'transaction_id': transactionId,
         'status': 'DECLINED',
@@ -352,7 +361,7 @@ class ApiService {
         'failure_reason': '503 Service Unavailable: Core banking system offline',
         'money_debited': false,
       };
-    } else if (activeState == 'INVALID_DETAILS' || activeState == 'INVALID_PIN') {
+    } else if (activeState.contains('INVALID') || activeState.contains('PIN')) {
       return {
         'transaction_id': transactionId,
         'status': 'DECLINED',
@@ -361,7 +370,7 @@ class ApiService {
         'failure_reason': 'Decline Code 55: Incorrect credentials',
         'money_debited': false,
       };
-    } else if (activeState == 'ERROR_SIGNAL' || activeState == 'TIMEOUT' || activeState == 'NO_RESPONSE') {
+    } else if (activeState.contains('ERROR') || activeState.contains('TIMEOUT') || activeState.contains('NO_RESPONSE')) {
       return {
         'transaction_id': transactionId,
         'status': 'UNDER_VERIFICATION',
