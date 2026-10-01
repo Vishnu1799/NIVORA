@@ -3,7 +3,35 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/bank",
+      "destination": "/bank.html"
+    },
+    {
+      "source": "/api/admin/(.*)",
+      "destination": "/api/admin.js"
+    },
+    {
+      "source": "/api/admin",
+      "destination": "/api/admin.js"
+    },
+    {
+      "source": "/api/bank/(.*)",
+      "destination": "/api/admin.js"
+    },
+    {
+      "source": "/api/bank",
+      "destination": "/api/admin.js"
+    },
+    {
+      "source": "/api/payments/(.*)",
+      "destination": "/api/payments.js"
+    },
+    {
+      "source": "/api/payments",
+      "destination": "/api/payments.js"
+    },
+    {
+      "source": "/((?!api|bank|bank\\.html).*)",
       "destination": "/index.html"
     }
   ],
@@ -12,6 +40,8 @@
       "source": "/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "*" },
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     }

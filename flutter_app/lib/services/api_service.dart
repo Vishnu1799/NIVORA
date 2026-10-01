@@ -13,7 +13,10 @@ class ApiService {
     }
     if (kIsWeb) {
       final host = Uri.base.host;
-      if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1' && !host.contains('vercel.app')) {
+      if (host.contains('vercel.app')) {
+        return Uri.base.origin;
+      }
+      if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1') {
         return 'http://$host:8000';
       }
       if (host == 'localhost' || host == '127.0.0.1') {
@@ -30,7 +33,10 @@ class ApiService {
     }
     if (kIsWeb) {
       final host = Uri.base.host;
-      if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1' && !host.contains('vercel.app')) {
+      if (host.contains('vercel.app')) {
+        return '${Uri.base.origin}/api/admin';
+      }
+      if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1') {
         return 'http://$host:8001';
       }
       if (host == 'localhost' || host == '127.0.0.1') {
