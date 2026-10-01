@@ -1,40 +1,39 @@
 """
-Admin endpoints for controlling bank simulator state.
-Use these to demo different failure scenarios.
+Admin endpoints for controlling bank simulator state and injecting AUREV AI demo signals.
 """
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
 from state import bank_state
 from datetime import datetime
+import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 class ServiceStateRequest(BaseModel):
-    state: str  # UP, DOWN, TIMEOUT, DEGRADED, INSUFFICIENT_FUNDS, INVALID_DETAILS, UNKNOWN
+    state: str  # UP, DOWN, TIMEOUT, DEGRADED, INSUFFICIENT_FUNDS, INVALID_DETAILS, UNKNOWN, ERROR_SIGNAL, NO_RESPONSE
     failure_rate: float = 0.0
-    force_outcome: Optional[str] = None  # SUCCESS, INSUFFICIENT_FUNDS, INVALID_DETAILS, TIMEOUT, UNKNOWN
+    force_outcome: Optional[str] = None
     response_delay_ms: int = 0
+
+
+class SignalRequest(BaseModel):
+    signal: str  # ERROR_SIGNAL, TIMEOUT, NO_RESPONSE, INSTANT_SUCCESS
+    transaction_id: Optional[str] = None
 
 
 @router.post("/service-state")
 def set_service_state(req: ServiceStateRequest):
-    """
-    Control bank behavior for demo scenarios.
-
-    Scenarios:
-    - {state: 'INSUFFICIENT_FUNDS'} — Persistent insufficient balance
-    - {state: 'DOWN'} — Bank completely unavailable
-    - {state: 'TIMEOUT'} — Bank gateway times out
-    - {state: 'UNKNOWN'} — Reconcilable debit conflict
-    - {state: 'DEGRADED', failure_rate: 0.7} — High failure rate
-    - {state: 'UP'} — Normal operation
-    """
-    valid_states = ["UP", "DOWN", "TIMEOUT", "DEGRADED", "INSUFFICIENT_FUNDS", "INVALID_DETAILS", "UNKNOWN"]
+    valid_states = [
+        "UP", "DOWN", "TIMEOUT", "DEGRADED", "INSUFFICIENT_FUNDS",
+        "INVALID_DETAILS", "UNKNOWN", "ERROR_SIGNAL", "NO_RESPONSE", "INSTANT_SUCCESS"
+    ]
     state_normalized = req.state.upper()
     if state_normalized not in valid_states:
-        # Check if force_outcome has the state
         if req.force_outcome and req.force_outcome.upper() in valid_states:
             state_normalized = req.force_outcome.upper()
         else:
@@ -54,6 +53,48 @@ def set_service_state(req: ServiceStateRequest):
         "message": f"Bank state set to {state_normalized}",
         "changed_at": datetime.utcnow().isoformat(),
     }
+
+
+@router.post("/signal")
+async def trigger_demo_signal(req: SignalRequest):
+    """
+    Direct AUREV AI Demo Signal Trigger:
+    - ERROR_SIGNAL: Forces connection drop / 500
+    - NO_RESPONSE / TIMEOUT: Forces gateway timeout
+    - INSTANT_SUCCESS: Delivers late success signal to backend for active UNDER_VERIFICATION payment
+    """
+    signal = req.signal.upper()
+
+    if signal in ["ERROR_SIGNAL", "TIMEOUT", "NO_RESPONSE"]:
+        bank_state.set_state(state=signal, force_outcome=signal)
+        return {
+            "success": True,
+            "signal": signal,
+            "message": f"Bank simulator armed with {signal}. Next payment will enter UNDER_VERIFICATION.",
+        }
+
+    elif signal == "INSTANT_SUCCESS":
+        # 1. Arm bank state as SUCCESS
+        bank_state.set_state(state="UP", force_outcome="SUCCESS")
+        # 2. Forward signal directly to backend AUREV receiver
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.post("http://localhost:8000/api/payments/signal", json={
+                    "signal": "INSTANT_SUCCESS",
+                    "transaction_id": req.transaction_id
+                })
+                backend_res = resp.json()
+        except Exception as e:
+            backend_res = {"error": str(e)}
+
+        return {
+            "success": True,
+            "signal": "INSTANT_SUCCESS",
+            "message": "Instant Success signal delivered to AUREV AI backend.",
+            "backend_response": backend_res,
+        }
+
+    return {"success": False, "error": f"Unknown signal {signal}"}
 
 
 @router.get("/service-state")
@@ -80,24 +121,3 @@ def reset_simulator():
 def list_transactions():
     """List all processed transactions."""
     return {"count": len(bank_state.transactions), "transactions": list(bank_state.transactions.values())}
-
-
-@router.get("/scenarios")
-def list_scenarios():
-    """List pre-configured demo scenarios."""
-    return {
-        "scenarios": [
-            {"name": "Normal Operation", "description": "All payments succeed",
-             "request": {"state": "UP", "failure_rate": 0.0}},
-            {"name": "Insufficient Funds", "description": "Persistent insufficient balance on customer account (Decline Code 51)",
-             "request": {"state": "INSUFFICIENT_FUNDS"}},
-            {"name": "Bank Down", "description": "Bank completely unavailable — payments instantly declined (503)",
-             "request": {"state": "DOWN"}},
-            {"name": "Network Timeout", "description": "Next payment times out — triggers AUREV AI safe recovery",
-             "request": {"state": "TIMEOUT"}},
-            {"name": "Unknown Debit Status", "description": "Money debited but unconfirmed — triggers auto-reconciliation",
-             "request": {"state": "UNKNOWN"}},
-            {"name": "Degraded Latency Mode", "description": "Slow responses + network jitter",
-             "request": {"state": "DEGRADED", "failure_rate": 0.5, "response_delay_ms": 3000}},
-        ]
-    }

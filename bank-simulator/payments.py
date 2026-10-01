@@ -47,13 +47,22 @@ async def process_payment(req: PaymentRequest):
         bank_state.transactions[req.idempotency_key] = result
         return result
 
-    # 2. Bank is TIMEOUT
-    if bank_state.service_state == "TIMEOUT" or bank_state.force_outcome == "TIMEOUT":
-        if bank_state.force_outcome == "TIMEOUT":
+    # 2. Bank is TIMEOUT / NO_RESPONSE
+    if bank_state.service_state in ["TIMEOUT", "NO_RESPONSE"] or bank_state.force_outcome in ["TIMEOUT", "NO_RESPONSE"]:
+        if bank_state.force_outcome in ["TIMEOUT", "NO_RESPONSE"]:
             bank_state.force_outcome = None
-        elif bank_state.service_state == "TIMEOUT":
+        elif bank_state.service_state in ["TIMEOUT", "NO_RESPONSE"]:
             bank_state.service_state = "UP"
         raise HTTPException(status_code=504, detail="504 Gateway Timeout: Bank switch dropped handshake")
+
+    # 2b. Bank is ERROR_SIGNAL (Connection Reset / Uncertain State)
+    if bank_state.service_state == "ERROR_SIGNAL" or bank_state.force_outcome == "ERROR_SIGNAL":
+        if bank_state.force_outcome == "ERROR_SIGNAL":
+            bank_state.force_outcome = None
+        elif bank_state.service_state == "ERROR_SIGNAL":
+            bank_state.service_state = "UP"
+        raise HTTPException(status_code=500, detail="500 Internal Server Error: Signal lost during payment capture")
+
 
     # 3. Persistent Insufficient Balance
     if bank_state.service_state == "INSUFFICIENT_FUNDS" or bank_state.force_outcome in ["INSUFFICIENT_FUNDS", "FAILED"]:

@@ -1,14 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from typing import Optional
 from sqlalchemy.orm import Session
 from app.database.connection import get_db
 from app.models.payment import Payment, PaymentStatus
 from app.schemas.payment import PaymentRequest, PaymentResponse
 from app.core.security import get_current_user
 from app.models.user import User
-from app.services.payment_service import initiate_payment
+from app.services.payment_service import initiate_payment, inject_payment_signal, verify_and_confirm_success
 import uuid
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
+
+
+class SignalRequest(BaseModel):
+    signal: str  # INSTANT_SUCCESS, ERROR_SIGNAL, TIMEOUT
+    transaction_id: Optional[str] = None
 
 
 @router.post("", response_model=PaymentResponse)
@@ -28,8 +35,10 @@ async def create_payment(
     )
     messages = {
         PaymentStatus.SUCCESS: "Payment completed successfully",
+        PaymentStatus.UNDER_VERIFICATION: "Payment is under verification by AUREV AI. Do not make another payment.",
+        PaymentStatus.SAFE_RETURN: "Payment could not be confirmed. ₹0 was debited.",
         PaymentStatus.DECLINED: f"Payment declined: {payment.failure_reason or 'Bank unavailable'}",
-        PaymentStatus.FAILED: "Payment failed — AUREV AI recovery initiated",
+        PaymentStatus.FAILED: "Payment failed — verification completed safely",
         PaymentStatus.RECOVERING: "Payment recovering — AUREV AI is working",
         PaymentStatus.ESCALATED: "Payment escalated for manual review",
         PaymentStatus.UNKNOWN: "Payment status unknown — investigating",
@@ -44,6 +53,41 @@ async def create_payment(
         ml_confidence=payment.ml_confidence,
         aurev_action=payment.aurev_action,
     )
+
+
+@router.post("/signal")
+async def receive_payment_signal(req: SignalRequest, db: Session = Depends(get_db)):
+    """
+    Demo Control Endpoint:
+    Receives external test signals (INSTANT_SUCCESS, ERROR_SIGNAL, TIMEOUT).
+    When INSTANT_SUCCESS arrives while a transaction is UNDER_VERIFICATION,
+    AUREV AI immediately verifies identity, amount, order, and confirms payment.
+    """
+    signal = req.signal.upper()
+    inject_payment_signal(signal, req.transaction_id)
+
+    # If INSTANT_SUCCESS, immediately resolve active UNDER_VERIFICATION payment
+    if signal == "INSTANT_SUCCESS":
+        query = db.query(Payment).filter(Payment.status == PaymentStatus.UNDER_VERIFICATION)
+        if req.transaction_id:
+            query = query.filter(Payment.transaction_id == req.transaction_id)
+        active_payment = query.order_by(Payment.created_at.desc()).first()
+
+        if active_payment:
+            await verify_and_confirm_success(db, active_payment)
+            return {
+                "success": True,
+                "signal": signal,
+                "transaction_id": active_payment.transaction_id,
+                "status": "SUCCESS",
+                "message": "Payment verified and confirmed by AUREV AI"
+            }
+
+    return {
+        "success": True,
+        "signal": signal,
+        "message": f"Signal {signal} registered for verification loop"
+    }
 
 
 @router.get("/{transaction_id}/status")

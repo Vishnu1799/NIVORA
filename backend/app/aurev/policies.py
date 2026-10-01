@@ -20,47 +20,35 @@ def get_permitted_actions(
     bank_health: str,
     recovery_attempt_count: int,
     error_code: str = "NONE",
+    current_status: str = "PROCESSING",
 ) -> List[str]:
     """
-    Deterministically compute which actions are permitted.
-    This is called BEFORE AUREV AI reasons — the LLM can only choose from this list.
+    Deterministically compute permitted actions.
+    Core Rule: When certainty is lost, NEVER blindly retry.
     """
+    # Definitive failure modes -> DECLINE directly
     if error_code in ["INSUFFICIENT_FUNDS", "FAILED_FUNDS", "INVALID_DETAILS", "INVALID_PIN", "BANK_UNAVAILABLE", "BANK_DOWN"]:
         return ["DECLINE"]
 
     if failure_category in ["INSUFFICIENT_FUNDS", "INVALID_PAYMENT_DETAILS", "BANK_SERVER_DOWN"]:
         return ["DECLINE"]
 
-    if recovery_attempt_count >= MAX_RECOVERY_ATTEMPTS:
-        logger.info(f"Max recovery attempts ({MAX_RECOVERY_ATTEMPTS}) reached. Only ESCALATE permitted.")
-        return ["ESCALATE"]
-
     if bank_health == "DOWN":
         return ["DECLINE"]
 
-    if money_debited is True:
-        # Money left the customer's account — never retry
-        return ["RECONCILE", "ESCALATE"]
+    # Middle-Stuck / Uncertain state -> WAIT_AND_VERIFY (NO RETRY ALLOWED)
+    if current_status == "UNDER_VERIFICATION" or failure_category in ["NETWORK_TIMEOUT", "GATEWAY_TIMEOUT", "UNKNOWN_STATUS", "PROCESSING", "TEMPORARY_BANK_ERROR"]:
+        if money_debited is True:
+            return ["RECONCILE", "SAFE_RETURN"]
+        return ["WAIT_AND_VERIFY", "SAFE_RETURN"]
 
-    if money_debited is None:
-        # Unknown — never retry into unknown state
-        return ["ESCALATE"]
+    if recovery_attempt_count >= MAX_RECOVERY_ATTEMPTS:
+        logger.info(f"Max recovery attempts ({MAX_RECOVERY_ATTEMPTS}) reached.")
+        return ["SAFE_RETURN", "ESCALATE"]
 
-    # money_debited = False — retry may be safe
-    if failure_category in ["NETWORK_TIMEOUT", "TEMPORARY_BANK_ERROR"]:
-        return ["RETRY", "ESCALATE"]
-
-    if failure_category in ["GATEWAY_TIMEOUT", "PROCESSING"]:
-        return ["WAIT_AND_VERIFY", "ESCALATE"]
-
-    if failure_category == "UNKNOWN_STATUS":
-        return ["ESCALATE"]
-
-    if failure_category == "DUPLICATE_RISK":
-        return ["RECONCILE"]
-
-    return ["ESCALATE"]
+    return ["WAIT_AND_VERIFY", "SAFE_RETURN"]
 
 
 def is_action_permitted(action: str, permitted: List[str]) -> bool:
     return action.upper() in [a.upper() for a in permitted]
+

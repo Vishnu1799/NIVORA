@@ -7,16 +7,20 @@ from app.database.connection import Base
 
 
 class PaymentStatus(str, enum.Enum):
-    INITIATED = "INITIATED"
+    IDLE = "IDLE"
+    PAYMENT_INITIATED = "PAYMENT_INITIATED"
     BANK_CHECK = "BANK_CHECK"
     PROCESSING = "PROCESSING"
+    UNDER_VERIFICATION = "UNDER_VERIFICATION"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+    SAFE_RETURN = "SAFE_RETURN"
     DECLINED = "DECLINED"
     UNKNOWN = "UNKNOWN"
     RECOVERING = "RECOVERING"
     RECONCILING = "RECONCILING"
     ESCALATED = "ESCALATED"
+
 
 
 class PaymentMethod(str, enum.Enum):
