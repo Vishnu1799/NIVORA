@@ -7,6 +7,9 @@ class ApiService {
   static const String _envBackendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: '');
   static const String _envBankUrl = String.fromEnvironment('BANK_URL', defaultValue: '');
 
+  static const String publicBackendUrl = 'https://nivora-backend-api.loca.lt';
+  static const String publicBankUrl = 'https://nivora-bank-simulator.loca.lt';
+
   static String get baseUrl {
     if (_envBackendUrl.isNotEmpty) {
       return _envBackendUrl;
@@ -14,7 +17,7 @@ class ApiService {
     if (kIsWeb) {
       final host = Uri.base.host;
       if (host.contains('vercel.app')) {
-        return Uri.base.origin;
+        return publicBackendUrl;
       }
       if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1') {
         return 'http://$host:8000';
@@ -22,9 +25,9 @@ class ApiService {
       if (host == 'localhost' || host == '127.0.0.1') {
         return 'http://localhost:8000';
       }
-      return 'http://10.253.25.92:8000';
+      return publicBackendUrl;
     }
-    return 'http://10.253.25.92:8000';
+    return publicBackendUrl;
   }
 
   static String get bankUrl {
@@ -34,7 +37,7 @@ class ApiService {
     if (kIsWeb) {
       final host = Uri.base.host;
       if (host.contains('vercel.app')) {
-        return '${Uri.base.origin}/api/admin';
+        return publicBankUrl;
       }
       if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1') {
         return 'http://$host:8001';
@@ -42,9 +45,9 @@ class ApiService {
       if (host == 'localhost' || host == '127.0.0.1') {
         return 'http://localhost:8001';
       }
-      return 'http://10.253.25.92:8001';
+      return publicBankUrl;
     }
-    return 'http://10.253.25.92:8001';
+    return publicBankUrl;
   }
 
   static Future<String?> getToken() async {
@@ -54,7 +57,10 @@ class ApiService {
 
   static Future<Map<String, String>> _getHeaders() async {
     final token = await getToken();
-    final headers = {'Content-Type': 'application/json'};
+    final headers = {
+      'Content-Type': 'application/json',
+      'Bypass-Tunnel-Reminder': 'true',
+    };
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
@@ -64,13 +70,14 @@ class ApiService {
   // 1. AUTH LOGIN (With Zero-Downtime Fallback)
   static Future<Map<String, dynamic>> login(String email, String password) async {
     try {
+      final headers = await _getHeaders();
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/auth/login'),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: jsonEncode({'email': email, 'password': password}),
           )
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -243,7 +250,10 @@ class ApiService {
 
     // Direct check to Bank Simulator if backend was unreachable
     try {
-      final bankResp = await http.get(Uri.parse('$bankUrl/admin/service-state')).timeout(const Duration(seconds: 2));
+      final bankResp = await http.get(
+        Uri.parse('$bankUrl/admin/service-state'),
+        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 3));
       if (bankResp.statusCode == 200) {
         final bState = jsonDecode(bankResp.body);
         final state = (bState['state'] ?? 'UP').toString().toUpperCase();
@@ -364,7 +374,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/payments/$transactionId/status'),
             headers: headers,
           )
-          .timeout(const Duration(seconds: 2));
+          .timeout(const Duration(seconds: 3));
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       }
@@ -372,7 +382,10 @@ class ApiService {
 
     // Direct check to Bank Simulator if backend was unreachable
     try {
-      final bankResp = await http.get(Uri.parse('$bankUrl/admin/service-state')).timeout(const Duration(seconds: 1));
+      final bankResp = await http.get(
+        Uri.parse('$bankUrl/admin/service-state'),
+        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 2));
       if (bankResp.statusCode == 200) {
         final bState = jsonDecode(bankResp.body);
         final state = (bState['state'] ?? 'UP').toString().toUpperCase();
@@ -475,7 +488,8 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getAurevMetrics() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/aurev/metrics')).timeout(const Duration(seconds: 2));
+      final headers = await _getHeaders();
+      final response = await http.get(Uri.parse('$baseUrl/api/aurev/metrics'), headers: headers).timeout(const Duration(seconds: 3));
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       }
@@ -489,7 +503,10 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getBankState() async {
     try {
-      final response = await http.get(Uri.parse('$bankUrl/admin/service-state')).timeout(const Duration(seconds: 2));
+      final response = await http.get(
+        Uri.parse('$bankUrl/admin/service-state'),
+        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 3));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final state = (data['state'] ?? 'UP').toString();
@@ -514,9 +531,9 @@ class ApiService {
     try {
       await http.post(
         Uri.parse('$bankUrl/admin/service-state'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Bypass-Tunnel-Reminder': 'true', 'Content-Type': 'application/json'},
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 2));
+      ).timeout(const Duration(seconds: 3));
     } catch (e) {}
   }
 }
