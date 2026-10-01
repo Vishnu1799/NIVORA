@@ -8,6 +8,7 @@ from app.database.connection import Base
 
 class PaymentStatus(str, enum.Enum):
     IDLE = "IDLE"
+    INITIATED = "PAYMENT_INITIATED"
     PAYMENT_INITIATED = "PAYMENT_INITIATED"
     BANK_CHECK = "BANK_CHECK"
     PROCESSING = "PROCESSING"
@@ -41,7 +42,7 @@ class Payment(Base):
     amount = Column(Float, nullable=False)
     currency = Column(String, default="INR")
     payment_method = Column(Enum(PaymentMethod), default=PaymentMethod.UPI)
-    status = Column(Enum(PaymentStatus), default=PaymentStatus.INITIATED)
+    status = Column(Enum(PaymentStatus), default=PaymentStatus.PAYMENT_INITIATED)
     failure_code = Column(String, nullable=True)
     failure_reason = Column(String, nullable=True)
     bank_transaction_id = Column(String, nullable=True)

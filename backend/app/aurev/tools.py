@@ -30,7 +30,7 @@ async def check_bank_health() -> dict:
 async def get_payment_status(transaction_id: str) -> dict:
     """Query payment status from bank simulator."""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(f"{settings.bank_simulator_url}/payments/{transaction_id}")
             if response.status_code == 200:
                 return {"found": True, **response.json()}
@@ -46,7 +46,7 @@ async def verify_transaction(transaction_id: str) -> dict:
     Returns money_debited status from bank.
     """
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(f"{settings.bank_simulator_url}/payments/{transaction_id}/verify")
             if response.status_code == 200:
                 data = response.json()

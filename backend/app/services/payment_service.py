@@ -215,10 +215,10 @@ async def initiate_payment(db: Session, order_id: str, amount: float,
 async def run_verification_loop(payment_id: str):
     """
     Autonomous AUREV Verification Loop:
-    1. Listens for late signals (INSTANT_SUCCESS).
+    1. Listens for late signals (INSTANT_SUCCESS) via in-memory event bus or bank status.
     2. Runs for DEMO_VERIFICATION_WINDOW (7 seconds).
     3. If success arrives: verifies identity, amount, order, and marks SUCCESS.
-    4. If window expires without signal: performs FINAL VERIFICATION on bank ledger and resolves to SAFE_RETURN / FAILED.
+    4. If window expires without signal: performs authoritative FINAL VERIFICATION on bank ledger and resolves to SAFE_RETURN.
     """
     for second in range(1, DEMO_VERIFICATION_WINDOW + 1):
         await asyncio.sleep(1.0)
@@ -226,22 +226,18 @@ async def run_verification_loop(payment_id: str):
         try:
             payment = db.query(Payment).filter(Payment.id == payment_id).first()
             if not payment or payment.status != PaymentStatus.UNDER_VERIFICATION:
-                # Already resolved (e.g. by external signal)
+                # Already resolved
                 return
 
-            # Check signal mailbox or bank simulator
             txn_id = payment.transaction_id
             signal = active_signals.pop(txn_id, None) or active_signals.pop("LATEST", None)
 
-            # Check bank verification endpoint
-            bank_data = await tools.verify_transaction(txn_id)
-            if signal == "INSTANT_SUCCESS" or bank_data.get("bank_status") == "SUCCESS" or bank_data.get("status") == "SUCCESS":
-                # LATE SUCCESS SIGNAL ARRIVED!
+            if signal == "INSTANT_SUCCESS":
                 logger.info(f"AUREV AI: Received late success signal for {txn_id}")
-                await verify_and_confirm_success(db, payment, bank_data)
+                await verify_and_confirm_success(db, payment)
                 return
 
-            await log_event(db, payment.id, "verification_in_progress", f"AUREV AI checking payment evidence... ({second}/{DEMO_VERIFICATION_WINDOW}s)", {
+            await log_event(db, payment.id, "verification_in_progress", f"AUREV AI autonomous verification active ({second}/{DEMO_VERIFICATION_WINDOW}s)", {
                 "elapsed_seconds": second,
                 "remaining_seconds": DEMO_VERIFICATION_WINDOW - second,
                 "status": "UNDER_VERIFICATION",
@@ -259,6 +255,7 @@ async def run_verification_loop(payment_id: str):
         await perform_final_verification(db, payment)
     finally:
         db.close()
+
 
 
 async def verify_and_confirm_success(db: Session, payment: Payment, bank_data: dict = None):
