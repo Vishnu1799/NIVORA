@@ -220,9 +220,9 @@ class ApiService {
     return [];
   }
 
-  static const String cloudStateUrl = 'https://api.restful-api.dev/objects/ff808181a09d98f701a0f56ecdb05299';
+  static const String cloudChannelUrl = 'https://ntfy.sh/nivora_state_channel_8923';
 
-  // Helper to fetch current bank state from localhost or cloud relay
+  // Helper to fetch current bank state from localhost or cloud channel
   static Future<String> _fetchActiveBankState() async {
     // 1. Check local bank simulator if running
     try {
@@ -234,15 +234,23 @@ class ApiService {
       }
     } catch (_) {}
 
-    // 2. Check cloud state relay
+    // 2. Check cloud state channel
     try {
       final response = await http
-          .get(Uri.parse(cloudStateUrl))
+          .get(Uri.parse('$cloudChannelUrl/json?poll=1&since=12h'))
           .timeout(const Duration(seconds: 2));
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['data'] != null && data['data']['state'] != null) {
-          return data['data']['state'].toString().toUpperCase();
+        final lines = response.body.trim().split('\n');
+        for (int i = lines.length - 1; i >= 0; i--) {
+          try {
+            final item = jsonDecode(lines[i]);
+            if (item['event'] == 'message' && item['message'] != null) {
+              final msgObj = jsonDecode(item['message']);
+              if (msgObj['state'] != null) {
+                return msgObj['state'].toString().toUpperCase();
+              }
+            }
+          } catch (_) {}
         }
       }
     } catch (_) {}
@@ -405,14 +413,14 @@ class ApiService {
       ).timeout(const Duration(milliseconds: 700));
     } catch (_) {}
 
-    // 2. Set cloud state relay
+    // 2. Set cloud state channel
     try {
-      await http.put(
-        Uri.parse(cloudStateUrl),
-        headers: {'Content-Type': 'application/json'},
+      await http.post(
+        Uri.parse('$cloudChannelUrl/publish'),
         body: jsonEncode({
-          'name': 'nivora_bank_state',
-          'data': {'state': state, 'force_outcome': state}
+          'state': state,
+          'force_outcome': state,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
         }),
       ).timeout(const Duration(seconds: 3));
     } catch (_) {}

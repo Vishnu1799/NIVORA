@@ -166,7 +166,7 @@
     <div id="toast" class="toast">Signal Dispatched!</div>
 
     <script>
-        const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff808181a09d98f701a0f56ecdb05299';
+        const CLOUD_CHANNEL_URL = 'https://ntfy.sh/nivora_state_channel_8923';
         let activeState = 'UP';
 
         function updateUI(state) {
@@ -196,11 +196,22 @@
 
         async function fetchState() {
             try {
-                const res = await fetch(CLOUD_STATE_URL, { cache: 'no-store' });
+                const res = await fetch(`${CLOUD_CHANNEL_URL}/json?poll=1&since=12h`, { cache: 'no-store' });
                 if (res.ok) {
-                    const data = await res.json();
-                    const state = (data.data && data.data.state) ? data.data.state : 'UP';
-                    updateUI(state);
+                    const text = await res.text();
+                    const lines = text.trim().split('\n');
+                    for (let i = lines.length - 1; i >= 0; i--) {
+                        try {
+                            const item = JSON.parse(lines[i]);
+                            if (item.event === 'message' && item.message) {
+                                const msgObj = JSON.parse(item.message);
+                                if (msgObj.state) {
+                                    updateUI(msgObj.state);
+                                    return;
+                                }
+                            }
+                        } catch(e) {}
+                    }
                 }
             } catch(e) {}
         }
@@ -208,16 +219,13 @@
         async function pushCloudState(state) {
             updateUI(state);
             try {
-                await fetch(CLOUD_STATE_URL, {
-                    method: 'PUT',
+                await fetch(`${CLOUD_CHANNEL_URL}/publish`, {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        name: 'nivora_bank_state',
-                        data: {
-                            state: state,
-                            force_outcome: state,
-                            updated_at: new Date().toISOString()
-                        }
+                        state: state,
+                        force_outcome: state,
+                        timestamp: Date.now()
                     })
                 });
             } catch(e) {
@@ -249,7 +257,7 @@
 
         updateUI('UP');
         fetchState();
-        setInterval(fetchState, 2000);
+        setInterval(fetchState, 1500);
     </script>
 </body>
 </html>
